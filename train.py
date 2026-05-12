@@ -4,7 +4,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets
 from torchvision.transforms import ToTensor
-
+import torch.optim as optim
 # Load Data
 
 #Augment the data images to useful size and form
@@ -81,7 +81,7 @@ labels_map = {
     36: "Yorkshire Terrier",
 }
 
-train_dataloader = DataLoader(training_data, batch_size=64, shuffle=True)
+train_dataloader = DataLoader(training_data, batch_size=3, shuffle=True)
 
 print("hello")
 
@@ -104,3 +104,62 @@ plt.imshow(img, cmap='grey')
 plt.show()
 
 
+class NeuralNetwork(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flatten = nn.Flatten()
+        self.linear_relu_stack = nn.Sequential(
+            nn.Linear(224*224, 512, bias= True),
+            nn.ReLU(),
+            nn.Linear(512, 512, bias= True),
+            nn.ReLU(),
+            nn.Linear(512, 37, bias= True),
+        )
+
+    def forward(self, x):
+        x = self.flatten(x)
+        logits = self.linear_relu_stack(x)
+        return logits
+    
+
+network  = NeuralNetwork()
+print(network)
+
+#Pass in input data
+
+X = torch.rand(1, 224, 224)
+logits = network(X)
+pred_probab = nn.Softmax(dim=1)(logits)
+y_pred = pred_probab.argmax(1)
+print(f"Predicted class: {y_pred}")
+
+
+
+
+optimizer = optim.SGD(network.parameters(), lr=0.001, momentum=0.9)
+criterion = nn.CrossEntropyLoss()
+
+
+for epoch in range(4):  # loop over the dataset multiple times
+
+    running_loss = 0.0
+    for i, data in enumerate(train_dataloader, 0):
+        # get the inputs; data is a list of [inputs, labels]
+        inputs, labels = data
+
+        # zero the parameter gradients
+        optimizer.zero_grad()
+
+        # forward + backward + optimize
+        outputs = network(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        # print statistics
+        running_loss += loss.item()
+        if i % 100 == 99:    # print every 2000 mini-batches
+            print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 100:.3f}')
+            running_loss = 0.0
+
+print('Finished Training')
