@@ -2,11 +2,8 @@ import torch, torchvision
 import matplotlib.pyplot as plt
 from torch import nn
 from torch.utils.data import DataLoader
-from torchvision import datasets
-from torchvision.transforms import ToTensor
 import torch.optim as optim
 import torch.nn.functional as F
-import PIL
 
 # Load Data
 
@@ -17,8 +14,6 @@ my_transform = torchvision.transforms.Compose([
 
     # Change output channel from 3(RGB COLOURS) to 1(Greyscale) (Disabled)
     # torchvision.transforms.Grayscale(num_output_channels = 1),
-    PIL.ImageOps.autocontrast(),
-
     
 
     #Change to tensor
@@ -26,7 +21,7 @@ my_transform = torchvision.transforms.Compose([
 
 
     #Normalise image so that tensors and neural network works better on them, recommended values from https://www.geeksforgeeks.org/python/how-to-normalize-images-in-pytorch/
-    torchvision.transforms.Normalize(mean = [0.5, 0.5, 0.5], std = [0.5, 0.5, 0.5]) #mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]
+    torchvision.transforms.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]) #mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]
 ])
 
 
@@ -91,18 +86,11 @@ labels_map = {
     36: "Yorkshire Terrier",
 }
 
-train_dataloader = DataLoader(training_data, batch_size=4, shuffle=True)
-
-device = torch.device("cpu")
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-
-print(device)
 
 
 
 # Display image and label.
-
+"""
 train_features, train_labels = next(iter(train_dataloader))
 
 print(train_features.size())
@@ -120,53 +108,102 @@ print(f"Label: {label} which is a", labels_map[label.item()])
 # Gives black and white image (img[:,:,2]) if channel is 3
 plt.imshow(img, cmap='grey')
 plt.show()
+"""
 
 
 
+
+# Defining the network
 class NeuralNetwork(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels= 12, kernel_size= 11) # Input img size+1 - kernel size 
-        self.conv2 = nn.Conv2d(in_channels=12, out_channels= 24, kernel_size= 8) # (128, 214, 214)
+        # Convolutions layer change the channel or amound of features from the image.
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels= 32, kernel_size= 3, padding=1) 
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels= 64, kernel_size= 3, padding=1)
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels= 128, kernel_size= 3, padding=1)
 
-        self.pool = nn.MaxPool2d(2, stride=2) # -->(128, 107, 107)
+        # Take max value of a 2x2 grid of pixels, helps performance
+        self.pool = nn.MaxPool2d(2, stride=2)
 
-        self.inputlayer = nn.Linear(24 * 50 * 50, 120)
+        self.inputlayer = nn.Linear(128 * 28 * 28, 120)
         self.fc2 = nn.Linear(120, 84)
         self.outlayer = nn.Linear(84, len(labels_map))
 
 
     def forward(self, x): # x.size() = (3, 224, 224)
-        x = F.relu(self.conv1(x)) #-> (12, 214, 124)
-        x = self.pool(x) #-> (12, 107, 107)
-        x = F.relu(self.conv2(x)) #-> (24, 100, 100 )
-        x = self.pool(x) # -> (24, 50, 50)
+        x = F.relu(self.conv1(x)) #-> (32, 224, 224)
+        x = self.pool(x) #-> (32, 112, 112)
+
+        x = F.relu(self.conv2(x)) #-> (64, 112, 112 )
+        x = self.pool(x) # -> (64, 56, 56)
+
+        x = F.relu(self.conv3(x)) #-> (128, 56, 56 )
+        x = self.pool(x) #-> (128, 28, 28)
+
+
         x = torch.flatten(x, 1) # flatten all dimensions except batch
+
         x = F.relu(self.inputlayer(x))
         x = F.relu(self.fc2(x))
         x = F.log_softmax(self.outlayer(x), dim=1)
         return x
 
 
-network = NeuralNetwork()
-network.to(device)
 
-loss_function = nn.NLLLoss()
-optimizer = optim.Adam(network.parameters(), lr=0.001)
+# Load data and check device
 
-epochs = 0
-for epoch in range(epochs):
-    for images, labels in train_dataloader:
-        optimizer.zero_grad()
+def main():
 
-        output = network(images)
-        loss = loss_function(output, labels)
-        
-        loss.backward()
-        optimizer.step()
+    train_dataloader = DataLoader(training_data, batch_size=64, shuffle=True)
 
-    print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}')
+    device = torch.device("cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+
+    print(device)
 
 
-print('Finished Training')
+    #Training
+    network = NeuralNetwork()
+    network.to(device)
+
+    # loss function opitmized for log_softmax function
+    loss_function = nn.NLLLoss()
+
+    #The optimizer changes the weights
+    optimizer = optim.Adam(network.parameters(), lr=0.001)
+
+    # Epoch (lap around whole dataset)
+    epochs = 30
+    print("Training...")
+    for epoch in range(epochs):
+        for images, labels in train_dataloader:
+            optimizer.zero_grad()
+
+            output = network(images)
+
+            # Calculate loss
+            loss = loss_function(output, labels)
+            
+            # Backward propagation
+            loss.backward()
+
+            #Change the weights
+            optimizer.step()
+
+
+        #Loss for every epoch
+        print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}')
+
+
+    print('Finished Training')
+
+
+    # Save the model
+    torch.save(network.state_dict(), 'model.pth')
+
+
+
+if __name__ == '__main__':
+    main()
