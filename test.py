@@ -35,7 +35,7 @@ test_dataloader = DataLoader(test_data, batch_size=1, shuffle=True)
 # Testing
 #Load the model
 tested_model = NeuralNetwork()
-tested_model.load_state_dict(torch.load('model.pth'))
+tested_model.load_state_dict(torch.load('model15.pth'))
 
 
 
